@@ -6,8 +6,12 @@ mod widgets {
     pub mod dot;
     pub mod scrollbar;
 }
+mod dialog {
+    pub mod system_file_chooser;
+}
 use config::{Config, Binding};
 use status_dot::{StatusDotState, update_status_dot, show_status_dot_timed, refresh_status_dot};
+use dialog::system_file_chooser::system_file_chooser;
 
 use fltk::{
     app, window::Window, text::TextEditor, text::TextBuffer,
@@ -15,7 +19,6 @@ use fltk::{
     prelude::*,
     frame::Frame,
 };
-use fltk_theme::{WidgetScheme, SchemeType};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::env;
@@ -173,8 +176,6 @@ fn main() {
     fontconfig_init::init();
     let cfg = Rc::from(RefCell::from(Config::default()));
     let app = app::App::default();
-    let widget_scheme = WidgetScheme::new(SchemeType::Sweet);
-    widget_scheme.apply();
 
     let args: Vec<String> = env::args().collect();
     let file_path = if args.len() > 1 { args[1].clone() } else { "out.txt".to_string() };
@@ -613,6 +614,33 @@ fn main() {
                                     }
                                 }
                             },
+                            Binding::OpenFile => {
+                                if let Some(path) = system_file_chooser() {
+                                    if !path.is_empty() {
+                                        let mut buf = TextBuffer::default();
+                                        if let Ok(contents) = std::fs::read_to_string(&path) {
+                                            buf.set_text(&contents);
+                                        }
+                                        editor.borrow_mut().set_buffer(buf.clone());
+
+                                        let file_name = std::path::Path::new(&path)
+                                            .file_name()
+                                            .and_then(|n| n.to_str())
+                                            .unwrap_or("untitled");
+                                        let abs_path = std::fs::canonicalize(&path)
+                                            .map(|p| p.display().to_string())
+                                            .unwrap_or(path.clone());
+                                        unsafe {
+                                            (*wind_ptr).get_mut().set_label(&format!("Skrift - {}", file_name));
+                                            (*header_ptr).get_mut().set_label(&abs_path);
+                                        }
+
+                                        unsafe {
+                                            update_status_label(&editor.borrow(), &mut *status_label_ptr, &last_cursor_pos);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         return true;
                     }

@@ -13,6 +13,7 @@ pub enum Binding {
     Reload,
     MoveLineUp,
     MoveLineDown,
+    OpenFile,
 }
 
 impl Binding {
@@ -23,6 +24,7 @@ impl Binding {
             "reload" => Some(Binding::Reload),
             "move_line_up" => Some(Binding::MoveLineUp),
             "move_line_down" => Some(Binding::MoveLineDown),
+            "open_file" => Some(Binding::OpenFile),
             _ => None,
         }
     }
@@ -194,6 +196,7 @@ impl Config {
                 (Binding::Reload, "Ctrl+R".into()),
                 (Binding::MoveLineUp, "Alt+Up".into()),
                 (Binding::MoveLineDown, "Alt+Down".into()),
+                (Binding::OpenFile, "Ctrl+O".into()),
             ]),
             theme: Theme {
                 background: "#1e1e1e".into(),

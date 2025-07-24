@@ -75,4 +75,5 @@ quit = "Ctrl+Q"
 reload = "Ctrl+R"
 move_line_up = "Alt+Up"
 move_line_down = "Alt+Down"
+open_file = "Ctrl+O"
 ```
