@@ -155,7 +155,7 @@ fn main() {
         pad, 30 + editor_height, editor_width, 30, "",
     );
 
-    let file_exists = std::path::Path::new(&file_path).exists();
+    let file_exists = Rc::new(RefCell::new(std::path::Path::new(&file_path).exists()));
 
     let status_dot = Rc::new(RefCell::new(None));
     let font_size = cfg.borrow().theme.font_size;
@@ -163,7 +163,7 @@ fn main() {
     let dot_y = font_size / 2;
     let dot_color = cfg.borrow().theme.color_from_str(&cfg.borrow().theme.negative_color);
     let mut dot = widgets::dot::Dot::new(dot_x, dot_y, 5, dot_color);
-    if file_exists {
+    if *file_exists.borrow() {
         dot.hide();
     } else {
         update_status_dot(Some(&mut dot), StatusDotState::Negative, font_size, &cfg.borrow().theme);
@@ -292,15 +292,21 @@ fn main() {
 
     let buf_rc = Rc::from(RefCell::from(buf));
 
-    fn update_status_label(editor: &TextEditor, label: &mut Frame) {
+    let last_cursor_pos = Rc::new(RefCell::new(-1i32));
+    fn update_status_label(editor: &TextEditor, label: &mut Frame, last_pos: &Rc<RefCell<i32>>) {
+        let current_pos = editor.insert_position();
+        if current_pos == *last_pos.borrow() {
+            return;
+        }
+        *last_pos.borrow_mut() = current_pos;
+
         if let Some(buf) = editor.buffer() {
-            let pos = editor.insert_position();
             let text = buf.text();
             let mut line = 1;
             let mut col = 1;
             let mut count = 0;
             for c in text.chars() {
-                if count == pos {
+                if count == current_pos {
                     break;
                 }
                 if c == '\n' {
@@ -316,6 +322,8 @@ fn main() {
     }
 
     let status_dot_clone = status_dot.clone();
+    let last_cursor_pos_clone = last_cursor_pos.clone();
+
     editor.borrow_mut().handle({
         let cfg = cfg.clone();
         let buf = buf_rc.clone();
@@ -330,6 +338,8 @@ fn main() {
         let editor_clone = editor_clone.clone();
         let status_label_ptr = &mut status_label as *mut Frame;
         let status_dot = status_dot_clone;
+        let last_cursor_pos = last_cursor_pos_clone;
+
         move |_, ev| {
             match ev {
                 fltk::enums::Event::KeyDown | fltk::enums::Event::KeyUp => {
@@ -342,20 +352,20 @@ fn main() {
                         blink_callback.clone(),
                     );
                     unsafe {
-                        update_status_label(&editor.borrow(), &mut *status_label_ptr);
+                        update_status_label(&editor.borrow(), &mut *status_label_ptr, &last_cursor_pos);
                     }
                 }
                 fltk::enums::Event::Push | fltk::enums::Event::Drag | fltk::enums::Event::Released => {
                     let editor = editor.clone();
                     let status_label_ptr = status_label_ptr.clone();
-                    app::add_idle3(move |_handle| {
-                        unsafe {
-                            update_status_label(&editor.borrow(), &mut *status_label_ptr);
-                        }
-                    });
+                    let last_cursor_pos = last_cursor_pos.clone();
+                    unsafe {
+                        update_status_label(&editor.borrow(), &mut *status_label_ptr, &last_cursor_pos);
+                    }
                 }
                 _ => {}
             }
+
             if let fltk::enums::Event::KeyDown = ev {
                 let bindings: Vec<(Binding, String)> = {
                     let cfg_borrow = cfg.borrow();
@@ -373,7 +383,7 @@ fn main() {
                                     }
                                 }
                                 std::fs::write(&file_path, buf.borrow().text()).expect("write failed");
-                                if !file_exists {
+                                if !*file_exists.borrow() {
                                     if let Some(mut dot) = status_dot.borrow_mut().take() {
                                         update_status_dot(Some(&mut dot), StatusDotState::Hidden, cfg.borrow().theme.font_size, &cfg.borrow().theme);
                                     }
@@ -485,7 +495,7 @@ fn main() {
         }
     });
 
-    update_status_label(&editor.borrow(), &mut status_label);
+    update_status_label(&editor.borrow(), &mut status_label, &last_cursor_pos);
 
     let config_path = {
         let mut path = dirs::home_dir().unwrap_or(std::path::PathBuf::from("."));
@@ -509,25 +519,47 @@ fn main() {
     let wind_ptr_cb = wind_ptr.clone();
     let header_ptr_cb = header_ptr.clone();
 
-    let rx = rx;
+    let config_check_interval = 0.1;
+    let config_rx = Rc::new(RefCell::new(rx));
 
-    fltk::app::add_idle3(move |_handle| {
-        while let Ok(()) = rx.try_recv() {
-            unsafe {
-                load_config_and_apply(
-                    &cfg_ptr,
-                    &editor_ptr,
-                    &mut wind_ptr_cb.borrow_mut(),
-                    &mut header_ptr_cb.borrow_mut(),
-                    blink_state_ptr.clone(),
-                    blink_paused_ptr.clone(),
-                    blink_timeout_handle_ptr.clone(),
-                    blink_callback_ptr.clone(),
-                    editor_clone_ptr.clone(),
-                    &mut *status_label_ptr,
-                    status_dot_ptr.borrow_mut().as_mut(),
-                );
+    app::add_timeout3(config_check_interval, {
+        let config_rx = config_rx.clone();
+        let cfg_ptr = cfg_ptr.clone();
+        let editor_ptr = editor_ptr.clone();
+        let blink_state_ptr = blink_state_ptr.clone();
+        let blink_paused_ptr = blink_paused_ptr.clone();
+        let blink_timeout_handle_ptr = blink_timeout_handle_ptr.clone();
+        let blink_callback_ptr = blink_callback_ptr.clone();
+        let editor_clone_ptr = editor_clone_ptr.clone();
+        let status_dot_ptr = status_dot_ptr.clone();
+        let wind_ptr_cb = wind_ptr_cb.clone();
+        let header_ptr_cb = header_ptr_cb.clone();
+
+        move |handle| {
+            let mut config_changed = false;
+            while let Ok(()) = config_rx.borrow().try_recv() {
+                config_changed = true;
             }
+
+            if config_changed {
+                unsafe {
+                    load_config_and_apply(
+                        &cfg_ptr,
+                        &editor_ptr,
+                        &mut wind_ptr_cb.borrow_mut(),
+                        &mut header_ptr_cb.borrow_mut(),
+                        blink_state_ptr.clone(),
+                        blink_paused_ptr.clone(),
+                        blink_timeout_handle_ptr.clone(),
+                        blink_callback_ptr.clone(),
+                        editor_clone_ptr.clone(),
+                        &mut *status_label_ptr,
+                        status_dot_ptr.borrow_mut().as_mut(),
+                    );
+                }
+            }
+
+            app::repeat_timeout3(config_check_interval, handle);
         }
     });
 
