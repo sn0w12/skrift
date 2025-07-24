@@ -152,7 +152,14 @@ fn get_max_top(
     } else {
         last_visible_line.saturating_sub(visible_lines - 1)
     };
+
     scrollbar.set_range(0, max_top);
+    if max_top > 0 {
+        scrollbar.show();
+    } else {
+        scrollbar.hide();
+    }
+
     max_top
 }
 
