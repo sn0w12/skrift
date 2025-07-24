@@ -55,7 +55,7 @@ You can customize themes and key bindings using TOML syntax.
 
 ```toml
 [theme]
-background = "05101a"
+background = "#05101a"
 foreground = "#e6f1ff"
 selection_color = "#74c4c9"
 negative_color = "#f72650"
@@ -64,6 +64,10 @@ font_size = 16
 cursor_style = "simple"
 cursor_flash = true
 cursor_flash_interval = 0.5
+scrollbar_style = "rounded"
+
+[editor]
+scroll_multiplier = 3
 
 [bindings]
 save = "Ctrl+S"

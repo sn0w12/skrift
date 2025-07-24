@@ -4,6 +4,7 @@ mod help;
 mod status_dot;
 mod widgets {
     pub mod dot;
+    pub mod scrollbar;
 }
 use config::{Config, Binding};
 use status_dot::{StatusDotState, update_status_dot, show_status_dot_timed, refresh_status_dot};
@@ -48,6 +49,7 @@ fn load_config_and_apply(
     editor_clone: Rc<RefCell<TextEditor>>,
     status_label: &mut Frame,
     dot: Option<&mut widgets::dot::Dot>,
+    scrollbar: Option<&mut widgets::scrollbar::ScrollBar>,
 ) {
     let new_cfg = Config::load();
     *cfg.borrow_mut() = new_cfg.clone();
@@ -82,6 +84,11 @@ fn load_config_and_apply(
 
     if let Some(dot) = dot {
         refresh_status_dot(Some(dot), &cfg.borrow().theme);
+    }
+
+    if let Some(sb) = scrollbar {
+        sb.set_colors(background, foreground);
+        sb.set_style(cfg.borrow().theme.scrollbar_style.into());
     }
 
     if let Some(handle) = blink_timeout_handle.borrow_mut().take() {
@@ -131,6 +138,24 @@ fn load_config_and_apply(
     }
 }
 
+fn get_max_top(
+    editor: &TextEditor,
+    scrollbar: &mut widgets::scrollbar::ScrollBar,
+) -> i32 {
+    let buf = editor.buffer().unwrap();
+    let line_height = (editor.text_size() as f32 * 1.4) as i32;
+    let visible_lines = (editor.height() / line_height).max(1);
+    let total_lines = buf.count_lines(0, buf.length());
+    let last_visible_line = if total_lines > 0 { total_lines - 1 } else { 0 };
+    let max_top = if last_visible_line < visible_lines {
+        0
+    } else {
+        last_visible_line.saturating_sub(visible_lines - 1)
+    };
+    scrollbar.set_range(0, max_top);
+    max_top
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "-h" || a == "--help") {
@@ -159,13 +184,29 @@ fn main() {
     let header = Rc::new(RefCell::new(Frame::new(0, 0, 800, 30, abs_path.as_str())));
 
     let pad = 10;
+    let scrollbar_width = 12;
     let editor_height = 540;
-    let editor_width = 800 - pad * 2;
+    let editor_width = 800 - pad * 2 - scrollbar_width;
     let editor = Rc::from(RefCell::from(TextEditor::new(
         pad, 30, editor_width, editor_height, "",
     )));
-    editor.borrow_mut().set_scrollbar_size(8);
+    editor.borrow_mut().set_scrollbar_align(fltk::enums::Align::Inside);
     editor.borrow_mut().set_frame(fltk::enums::FrameType::NoBox);
+    let top_line = Rc::new(RefCell::new(1));
+
+    let mut scrollbar = widgets::scrollbar::ScrollBar::new(
+        pad + editor_width,
+        30,
+        scrollbar_width,
+        editor_height,
+    );
+    scrollbar.set_style(widgets::scrollbar::ScrollBarStyle::Rounded);
+    let editor_for_scrollbar = editor.clone();
+    scrollbar.set_on_change(move |val| {
+        editor_for_scrollbar.borrow_mut().scroll(val, 0);
+    });
+    scrollbar.show();
+    let scrollbar = Rc::new(RefCell::new(scrollbar));
 
     let mut status_label = Frame::new(
         pad, 30 + editor_height, editor_width, 30, "",
@@ -194,6 +235,7 @@ fn main() {
         println!("File not found: {}", file_path);
     }
     editor.borrow_mut().set_buffer(buf.clone());
+    get_max_top(&editor.borrow(), &mut scrollbar.borrow_mut());
 
     let blink_state = Rc::from(RefCell::from(true));
     let blink_paused = Rc::from(RefCell::from(false));
@@ -300,11 +342,25 @@ fn main() {
         editor_clone.clone(),
         &mut status_label,
         status_dot.borrow_mut().as_mut(),
+        Some(&mut *scrollbar.borrow_mut()),
     );
 
     wind.borrow_mut().resizable(&editor.borrow().as_base_widget());
     wind.borrow_mut().end();
     wind.borrow_mut().show();
+
+    wind.borrow_mut().handle({
+        let editor = editor.clone();
+        let scrollbar = scrollbar.clone();
+        move |_w, ev| {
+            if ev == fltk::enums::Event::Resize {
+                let ed = editor.borrow_mut();
+                let mut sb = scrollbar.borrow_mut();
+                get_max_top(&ed, &mut sb);
+            }
+            false
+        }
+    });
 
     let buf_rc = Rc::from(RefCell::from(buf));
 
@@ -355,6 +411,8 @@ fn main() {
         let status_label_ptr = &mut status_label as *mut Frame;
         let status_dot = status_dot_clone;
         let last_cursor_pos = last_cursor_pos_clone;
+        let top_line = top_line.clone();
+        let scrollbar = scrollbar.clone();
 
         move |_, ev| {
             match ev {
@@ -367,6 +425,10 @@ fn main() {
                         blink_timeout_handle.clone(),
                         blink_callback.clone(),
                     );
+
+                    let ed = editor.borrow_mut();
+                    let mut sb = scrollbar.borrow_mut();
+                    get_max_top(&ed, &mut sb);
                     unsafe {
                         update_status_label(&editor.borrow(), &mut *status_label_ptr, &last_cursor_pos);
                     }
@@ -378,6 +440,30 @@ fn main() {
                     unsafe {
                         update_status_label(&editor.borrow(), &mut *status_label_ptr, &last_cursor_pos);
                     }
+                }
+                fltk::enums::Event::MouseWheel => {
+                    let mut ed = editor.borrow_mut();
+                    let dy = app::event_dy();
+                    let mut top = *top_line.borrow();
+                    let max_top = get_max_top(&ed, &mut scrollbar.borrow_mut());
+
+                    let scroll_multiplier = cfg.borrow().editor.scroll_multiplier.max(1);
+
+                    match dy {
+                        fltk::app::MouseWheel::Up => {
+                            top = (top - scroll_multiplier).max(0);
+                        }
+                        fltk::app::MouseWheel::Down => {
+                            top = (top + scroll_multiplier).min(max_top);
+                        }
+                        _ => {}
+                    }
+
+                    *top_line.borrow_mut() = top;
+                    ed.scroll(top, 0);
+                    scrollbar.borrow_mut().set_value(top);
+
+                    return true;
                 }
                 _ => {}
             }
@@ -433,6 +519,7 @@ fn main() {
                                         editor_clone.clone(),
                                         &mut *status_label_ptr,
                                         status_dot.borrow_mut().as_mut(),
+                                        Some(&mut *scrollbar.borrow_mut()),
                                     );
                                 }
                                 println!("Config reloaded");
@@ -571,6 +658,7 @@ fn main() {
                         editor_clone_ptr.clone(),
                         &mut *status_label_ptr,
                         status_dot_ptr.borrow_mut().as_mut(),
+                        Some(&mut *scrollbar.borrow_mut()),
                     );
                 }
             }

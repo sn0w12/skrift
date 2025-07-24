@@ -63,10 +63,36 @@ impl Cursor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScrollBarStyle {
+    Boxy,
+    Rounded,
+}
+
+impl ScrollBarStyle {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "boxy" => ScrollBarStyle::Boxy,
+            "rounded" => ScrollBarStyle::Rounded,
+            _ => ScrollBarStyle::Rounded,
+        }
+    }
+}
+
+impl Into<crate::widgets::scrollbar::ScrollBarStyle> for ScrollBarStyle {
+    fn into(self) -> crate::widgets::scrollbar::ScrollBarStyle {
+        match self {
+            ScrollBarStyle::Boxy => crate::widgets::scrollbar::ScrollBarStyle::Boxy,
+            ScrollBarStyle::Rounded => crate::widgets::scrollbar::ScrollBarStyle::Rounded,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub bindings: HashMap<Binding, String>,
     pub theme: Theme,
+    pub editor: EditorConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +106,12 @@ pub struct Theme {
     pub cursor_flash_interval: f64,
     pub negative_color: String,
     pub cursor_style: Cursor,
+    pub scrollbar_style: ScrollBarStyle,
+}
+
+#[derive(Debug, Clone)]
+pub struct EditorConfig {
+    pub scroll_multiplier: i32,
 }
 
 impl Config {
@@ -113,21 +145,25 @@ impl Config {
             .unwrap_or_else(|| default.bindings.clone());
 
         let theme = value.get("theme").and_then(|t| t.as_table());
+        let editor = value.get("editor").and_then(|t| t.as_table());
 
-        fn get_str(theme: Option<&toml::value::Table>, key: &str, default: &str) -> String {
-            theme.and_then(|t| t.get(key)).and_then(|v| v.as_str()).unwrap_or(default).to_string()
+        fn get_str(tbl: Option<&toml::value::Table>, key: &str, default: &str) -> String {
+            tbl.and_then(|t| t.get(key)).and_then(|v| v.as_str()).unwrap_or(default).to_string()
         }
-        fn get_i32(theme: Option<&toml::value::Table>, key: &str, default: i32) -> i32 {
-            theme.and_then(|t| t.get(key)).and_then(|v| v.as_integer()).map(|i| i as i32).unwrap_or(default)
+        fn get_i32(tbl: Option<&toml::value::Table>, key: &str, default: i32) -> i32 {
+            tbl.and_then(|t| t.get(key)).and_then(|v| v.as_integer()).map(|i| i as i32).unwrap_or(default)
         }
-        fn get_bool(theme: Option<&toml::value::Table>, key: &str, default: bool) -> bool {
-            theme.and_then(|t| t.get(key)).and_then(|v| v.as_bool()).unwrap_or(default)
+        fn get_bool(tbl: Option<&toml::value::Table>, key: &str, default: bool) -> bool {
+            tbl.and_then(|t| t.get(key)).and_then(|v| v.as_bool()).unwrap_or(default)
         }
-        fn get_f64(theme: Option<&toml::value::Table>, key: &str, default: f64) -> f64 {
-            theme.and_then(|t| t.get(key)).and_then(|v| v.as_float()).unwrap_or(default)
+        fn get_f64(tbl: Option<&toml::value::Table>, key: &str, default: f64) -> f64 {
+            tbl.and_then(|t| t.get(key)).and_then(|v| v.as_float()).unwrap_or(default)
         }
-        fn get_cursor(theme: Option<&toml::value::Table>, key: &str, default: Cursor) -> Cursor {
-            theme.and_then(|t| t.get(key)).and_then(|v| v.as_str()).map(Cursor::from_str).unwrap_or(default)
+        fn get_cursor(tbl: Option<&toml::value::Table>, key: &str, default: Cursor) -> Cursor {
+            tbl.and_then(|t| t.get(key)).and_then(|v| v.as_str()).map(Cursor::from_str).unwrap_or(default)
+        }
+        fn get_scrollbar_style(tbl: Option<&toml::value::Table>, key: &str, default: ScrollBarStyle) -> ScrollBarStyle {
+            tbl.and_then(|t| t.get(key)).and_then(|v| v.as_str()).map(ScrollBarStyle::from_str).unwrap_or(default)
         }
 
         Config {
@@ -142,6 +178,10 @@ impl Config {
                 cursor_flash_interval: get_f64(theme, "cursor_flash_interval", default.theme.cursor_flash_interval),
                 negative_color: get_str(theme, "negative_color", &default.theme.negative_color),
                 cursor_style: get_cursor(theme, "cursor_style", default.theme.cursor_style),
+                scrollbar_style: get_scrollbar_style(theme, "scrollbar_style", default.theme.scrollbar_style),
+            },
+            editor: EditorConfig {
+                scroll_multiplier: get_i32(editor, "scroll_multiplier", default.editor.scroll_multiplier),
             },
         }
     }
@@ -165,7 +205,11 @@ impl Config {
                 cursor_flash_interval: 0.5,
                 negative_color: "#FF0000".into(),
                 cursor_style: Cursor::Simple,
-            }
+                scrollbar_style: ScrollBarStyle::Rounded,
+            },
+            editor: EditorConfig {
+                scroll_multiplier: 3,
+            },
         }
     }
 
