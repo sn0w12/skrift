@@ -21,6 +21,21 @@ use std::env;
 use std::fs;
 use std::sync::mpsc::channel;
 
+#[cfg(target_os = "linux")]
+mod fontconfig_init {
+    #[link(name = "fontconfig")]
+    unsafe extern "C" {
+        pub fn FcInit() -> ::std::os::raw::c_int;
+    }
+    pub fn init() {
+        unsafe { FcInit(); }
+    }
+}
+#[cfg(not(target_os = "linux"))]
+mod fontconfig_init {
+    pub fn init() {}
+}
+
 fn load_config_and_apply(
     cfg: &Rc<RefCell<Config>>,
     editor: &Rc<RefCell<TextEditor>>,
@@ -123,6 +138,7 @@ fn main() {
         return;
     }
 
+    fontconfig_init::init();
     let cfg = Rc::from(RefCell::from(Config::default()));
     let app = app::App::default();
     let widget_scheme = WidgetScheme::new(SchemeType::Sweet);
