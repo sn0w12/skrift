@@ -158,13 +158,13 @@ fn main() {
     let wind = Rc::new(RefCell::new(Window::new(100, 100, 800, 600, window_title.as_str())));
     let header = Rc::new(RefCell::new(Frame::new(0, 0, 800, 30, abs_path.as_str())));
 
-    let pad = 20;
-    let editor_height = 600 - pad * 2 - 20;
+    let pad = 10;
+    let editor_height = 540;
     let editor_width = 800 - pad * 2;
     let editor = Rc::from(RefCell::from(TextEditor::new(
         pad, 30, editor_width, editor_height, "",
     )));
-    editor.borrow_mut().set_scrollbar_size(14);
+    editor.borrow_mut().set_scrollbar_size(8);
     editor.borrow_mut().set_frame(fltk::enums::FrameType::NoBox);
 
     let mut status_label = Frame::new(
