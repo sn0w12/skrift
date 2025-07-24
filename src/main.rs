@@ -208,9 +208,12 @@ fn main() {
         editor_height,
     );
     scrollbar.set_style(widgets::scrollbar::ScrollBarStyle::Rounded);
+
+    let top_line_for_scrollbar = top_line.clone();
     let editor_for_scrollbar = editor.clone();
     scrollbar.set_on_change(move |val| {
         editor_for_scrollbar.borrow_mut().scroll(val, 0);
+        *top_line_for_scrollbar.borrow_mut() = val;
     });
     scrollbar.show();
     let scrollbar = Rc::new(RefCell::new(scrollbar));
