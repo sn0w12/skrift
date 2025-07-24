@@ -433,9 +433,24 @@ fn main() {
                         blink_callback.clone(),
                     );
 
-                    let ed = editor.borrow_mut();
-                    let mut sb = scrollbar.borrow_mut();
-                    get_max_top(&ed, &mut sb);
+                    {
+                        let ed = editor.borrow_mut();
+                        let mut sb = scrollbar.borrow_mut();
+                        let max_top = get_max_top(&ed, &mut sb);
+
+                        if let Some(buf) = ed.buffer() {
+                            let total_lines = buf.count_lines(0, buf.length());
+                            let insert_pos = ed.insert_position();
+                            let line_of_cursor = buf.line_start(insert_pos);
+                            let line_idx = buf.count_lines(0, line_of_cursor);
+                            if line_idx >= total_lines - 1 {
+                                *top_line.borrow_mut() = max_top;
+                            }
+                        }
+
+                        let top = *top_line.borrow();
+                        sb.set_value(top);
+                    }
                     unsafe {
                         update_status_label(&editor.borrow(), &mut *status_label_ptr, &last_cursor_pos);
                     }
