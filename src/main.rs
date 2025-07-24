@@ -160,6 +160,7 @@ fn main() {
     let status_dot = Rc::new(RefCell::new(None));
     let font_size = cfg.borrow().theme.font_size;
     let dot_x = font_size / 2;
+    let dot_y = font_size / 2;
     let dot_color = cfg.borrow().theme.color_from_str(&cfg.borrow().theme.negative_color);
     let mut dot = widgets::dot::Dot::new(dot_x, dot_y, 5, dot_color);
     if file_exists {
